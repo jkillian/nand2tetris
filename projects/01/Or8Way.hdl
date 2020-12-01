@@ -13,5 +13,13 @@ CHIP Or8Way {
     OUT out;
 
     PARTS:
-    // Put your code here:
+    Or(a=in[0], b=in[1], out=out00);
+    Or(a=in[2], b=in[3], out=out01);
+    Or(a=in[4], b=in[5], out=out02);
+    Or(a=in[6], b=in[7], out=out03);
+
+    Or(a=out00, b=out01, out=out10);
+    Or(a=out02, b=out03, out=out11);
+
+    Or(a=out10, b=out11, out=out);
 }
