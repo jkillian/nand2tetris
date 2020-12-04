@@ -42,5 +42,24 @@ CHIP ALU {
         ng; // 1 if (out < 0),  0 otherwise
 
     PARTS:
-   // Put you code here:
+        Mux16(a=x, b=false, sel=zx, out=x1);
+        Mux16(a=y, b=false, sel=zy, out=y1);
+        Not16(in=x1, out=notx1);
+        Not16(in=y1, out=noty1);
+        Mux16(a=x1, b=notx1, sel=nx, out=x2);
+        Mux16(a=y1, b=noty1, sel=ny, out=y2);
+        And16(a=x2, b=y2, out=and);
+        Add16(a=x2, b=y2, out=sum);
+        Mux16(a=and, b=sum, sel=f, out=posout);
+        Not16(in=posout, out=negout);
+        Mux16(a=posout, b=negout, sel=no, out=out, out=finalout, out[15]=isneg, out[15]=ng);
+
+        // multiply final output by -1 by inverting and adding one
+        Not16(in=finalout, out=negfinalout);
+        // then see if that number is negative
+        Inc16(in=negfinalout, out[15]=isnegneg);
+
+        // If either finalout or finalout*-1 is negative, we know we're not dealing with zero.
+        Or(a=isneg, b=isnegneg, out=isnotzero);
+        Not(in=isnotzero, out=zr);
 }
