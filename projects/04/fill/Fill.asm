@@ -11,4 +11,59 @@
 // "white" in every pixel;
 // the screen should remain fully clear as long as no key is pressed.
 
-// Put your code here.
+// keep track of what pixel we're current filling in / clearing
+@screenpx
+M=-1
+
+(LOOP)
+  @screenpx
+  M=M+1
+
+  // if we reach the end of the screen, reset our counter back to 0
+  @8192
+  D=A
+  @screenpx
+  D=D-M
+
+  @SKIP_RESET
+  D;JGT
+
+  @screenpx
+  M=0
+
+  (SKIP_RESET)
+
+  @KBD
+  D=M
+
+  @KEYPRESSED
+  D;JGT
+
+  @NOKEY
+  D;JEQ
+
+(KEYPRESSED)
+  @screenpx
+  D=M
+
+  @SCREEN
+  A=A+D
+
+  // set to all black
+  M=-1
+
+  @LOOP
+  0;JMP
+
+(NOKEY)
+  @screenpx
+  D=M
+
+  @SCREEN
+  A=A+D
+
+  // set to all white
+  M=0
+
+  @LOOP
+  0;JMP
