@@ -39,5 +39,33 @@ CHIP CPU {
         pc[15];          // address of next instruction
 
     PARTS:
-    // Put your code here:
+
+    // a-reg input source basd on type of instruction
+    Mux16(a=instruction, b=aluout, sel=instruction[15], out=aregin);
+
+    // write to A/D/m registers if appropriate c-instr d-bit is set
+    // or also, for A, if an a-instr
+    Not(in=instruction[15], out=isainstr);
+    Or(a=isainstr, b=instruction[5], out=aload);
+    And(a=instruction[15], b=instruction[4], out=dload);
+    And(a=instruction[15], b=instruction[3], out=writeM);
+
+    ARegister(in=aregin, load=aload, out=aregout, out[0..14]=addressM);
+    DRegister(in=aluout, load=dload, out=dregout);
+
+    // ALU always gets D value, and then A or M value based on the a-bit of the c-instr
+    Mux16(a=aregout, b=inM, sel=instruction[12], out=aluyin);
+    ALU(x=dregout, y=aluyin, zx=instruction[11], nx=instruction[10], zy=instruction[9], ny=instruction[8], f=instruction[7], no=instruction[6], out=aluout, out=outM, zr=aluoutzr, ng=aluoutng);
+
+    // ALU output is positive if Nor(negative, zero)
+    Or(a=aluoutng, b=aluoutzr, out=alungorzr);
+    Not(in=alungorzr, out=aluoutpos);
+
+    // Compare our three status bits neg/zero/pos with the three j-bits from the c-instr
+    // If any of the three bits are both true, we know we should jump (if a c-instr)
+    And16(a[2]=instruction[2], a[1]=instruction[1], a[0]=instruction[0], b[2]=aluoutng, b[1]=aluoutzr, b[0]=aluoutpos, out[0..2]=jmpval);
+    Or8Way(in[0..2]=jmpval, out=shouldjump0);
+    And(a=shouldjump0, b=instruction[15], out=shouldjump1);
+
+    PC(in=aregout, load=shouldjump1, inc=true, reset=reset, out[0..14]=pc);
 }
