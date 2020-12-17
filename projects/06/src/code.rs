@@ -1,4 +1,4 @@
-use crate::parser::{CCommandComp, CCommandDest, CCommandJump, CommandType};
+use crate::parser::{CCommandComp, CCommandDest, CCommandJump, FinalCommand};
 
 impl CCommandDest {
     fn to_binary(&self) -> u16 {
@@ -65,11 +65,11 @@ impl CCommandJump {
     }
 }
 
-impl CommandType {
+impl FinalCommand {
     pub fn to_binary(&self) -> u16 {
         match self {
-            CommandType::ACommand(data) => *data,
-            CommandType::CCommand { dest, comp, jump } => {
+            FinalCommand::ACommand(data) => *data,
+            FinalCommand::CCommand { dest, comp, jump } => {
                 (0b111 << 13) | (comp.to_binary() << 6) | (dest.to_binary() << 3) | jump.to_binary()
             }
         }

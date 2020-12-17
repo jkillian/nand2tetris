@@ -1,3 +1,4 @@
+use crate::symbol_table::SymbolTable;
 use std::fmt;
 #[derive(Debug, Clone)]
 struct SyntaxError(String);
@@ -11,7 +12,18 @@ impl fmt::Display for SyntaxError {
 impl std::error::Error for SyntaxError {}
 
 #[derive(Debug)]
-pub enum CommandType {
+pub enum Command {
+    ACommandNum(u16),
+    ACommandSym(String),
+    CCommand {
+        dest: CCommandDest,
+        comp: CCommandComp,
+        jump: CCommandJump,
+    },
+    Label(String),
+}
+
+pub enum FinalCommand {
     ACommand(u16),
     CCommand {
         dest: CCommandDest,
@@ -20,7 +32,7 @@ pub enum CommandType {
     },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum CCommandDest {
     None,
     M,
@@ -47,7 +59,7 @@ impl CCommandDest {
         }
     }
 }
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum CCommandComp {
     Zero,
     One,
@@ -115,7 +127,7 @@ impl CCommandComp {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum CCommandJump {
     None,
     JGT,
@@ -145,31 +157,71 @@ impl CCommandJump {
 
 pub fn parse(
     stream: &mut impl std::io::Read,
-) -> Result<Vec<CommandType>, Box<dyn std::error::Error>> {
+) -> Result<Vec<FinalCommand>, Box<dyn std::error::Error>> {
+    let mut symbol_table = SymbolTable::new();
     let mut data = String::new();
     stream.read_to_string(&mut data)?;
 
-    let result: Result<Vec<_>, _> = data
+    let maybe_orig_commands: Result<Vec<_>, _> = data
         .lines()
         .filter_map(|line| {
+            // remove whitespace
             let stripped_line = line.replace(char::is_whitespace, "");
-            match stripped_line {
+            // remove any comment
+            let code_line = match stripped_line.splitn(2, "//").collect::<Vec<&str>>()[..] {
+                [code, _comment] => code,
+                [code] => code,
+                _ => panic!("Unreachable"),
+            };
+            match code_line {
                 s if s.starts_with("@") => match str::parse::<u16>(&s[1..]) {
-                    Ok(val) => Some(Ok(CommandType::ACommand(val))),
-                    Err(_) => Some(Err(SyntaxError(format!("Could not parse {}", s)))),
+                    Ok(val) => Some(Ok(Command::ACommandNum(val))),
+                    Err(_) => Some(Ok(Command::ACommandSym(String::from(&s[1..])))),
                 },
-                s if s.starts_with("(") => None,
+                s if s.starts_with("(") => Some(Ok(Command::Label(String::from(&s[1..s.len()-1])))),
                 s if s.starts_with("/") => None,
                 s if s.is_empty() => None,
-                s => Some(parse_c_command(s)),
+                s => Some(parse_c_command(String::from(s))),
             }
         })
         .collect();
+    let orig_commands = maybe_orig_commands?;
 
-    Ok(result?)
+    let mut command_counter = 0;
+    for command in &orig_commands {
+        if let Command::Label(label) = command {
+            symbol_table.insert_label(&label, command_counter);
+        } else {
+            command_counter += 1;
+        }
+
+        if let Command::ACommandSym(sym) = command {
+            symbol_table.insert_unknown_symbol(&sym);
+        }
+    }
+
+    symbol_table.finalize();
+
+    let final_commands: Vec<_> = orig_commands
+        .iter()
+        .filter_map(|c| match c {
+            Command::ACommandNum(val) => Some(FinalCommand::ACommand(*val)),
+            Command::ACommandSym(sym) => Some(FinalCommand::ACommand(
+                *symbol_table.get_value(sym).unwrap(),
+            )),
+            Command::CCommand { dest, comp, jump } => Some(FinalCommand::CCommand {
+                dest: *dest,
+                comp: *comp,
+                jump: *jump,
+            }),
+            Command::Label(_) => None,
+        })
+        .collect();
+
+    Ok(final_commands)
 }
 
-fn parse_c_command(data: String) -> Result<CommandType, SyntaxError> {
+fn parse_c_command(data: String) -> Result<Command, SyntaxError> {
     let (dest, rest) = match data.splitn(2, "=").collect::<Vec<&str>>()[..] {
         [pre, suffix] => (CCommandDest::from_string(pre)?, suffix),
         [all] => (CCommandDest::None, all),
@@ -183,5 +235,5 @@ fn parse_c_command(data: String) -> Result<CommandType, SyntaxError> {
         [all] => (CCommandComp::from_string(all)?, CCommandJump::None),
         _ => panic!("Unreachable"),
     };
-    Ok(CommandType::CCommand { dest, comp, jump })
+    Ok(Command::CCommand { dest, comp, jump })
 }
