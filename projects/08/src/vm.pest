@@ -1,0 +1,29 @@
+
+program = _{ SOI ~ NEWLINE* ~ (stmt ~ NEWLINE+)* ~ stmt? ~ eoi }
+stmt = _{ c_arithmetic | c_push | c_pop | c_label | c_goto | c_if_goto | c_function | c_call | c_return }
+
+c_arithmetic = { "add" | "sub" | "neg" | "eq" | "gt" | "lt" | "and" | "or" | "not" }
+
+c_push = { "push" ~ memory_segment ~ index }
+c_pop = { "pop" ~ memory_segment ~ index }
+
+memory_segment = { "argument" | "local" | "static" | "constant" | "this" | "that" | "pointer" | "temp" }
+index = @{ ASCII_DIGIT+ }
+
+c_label = { "label" ~ label }
+c_goto = { "goto" ~ label }
+c_if_goto = { "if-goto" ~ label }
+c_function = { "function" ~ label ~ index}
+c_call = { "call" ~ label ~ index}
+c_return = { "return" }
+
+label = @{ 
+  ( ASCII_ALPHA | "_" | "." | ":" )
+  ~ ( ASCII_ALPHANUMERIC | "_" | "." | ":" )+
+}
+
+WHITESPACE = _{ " " | "\t" }
+COMMENT = _{ "//" ~ (!NEWLINE ~ ANY)* }
+
+// see https://github.com/pest-parser/pest/issues/304#issuecomment-427198507
+eoi = _{ !ANY }
