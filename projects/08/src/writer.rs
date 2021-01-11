@@ -18,6 +18,14 @@ M=D
 @SP
 M=M+1";
 
+fn push_lbl(lbl: &str) -> String {
+    vec![
+        format!("@{}", lbl),
+        "D=M".into(),
+        PUSH_D.into(),
+    ].join("\n")
+}
+
 fn comparison(comp: &str, lbl: &str) -> String {
     let commands: Vec<String> = vec![
         POP.into(),
@@ -138,6 +146,24 @@ impl CodeWriter {
         self.curr_filename = filename.trim_end_matches(".vm").into();
     }
 
+    pub fn write_init_code(&mut self) -> String {
+        vec![
+            "@256",
+            "D=A",
+            "@SP",
+            "M=D",
+            "@LCL",
+            "M=D",
+            "@ARG",
+            "M=D",
+            "@THIS",
+            "M=D",
+            "@THAT",
+            "M=D",
+            &self.write_command(&VMCommand::CallCommand("Sys.init".into(), 0))[..],
+        ].join("\n")
+    }
+
     pub fn write_command(&mut self, command: &VMCommand) -> String {
         match command {
             VMCommand::ArithmeticCommand(arth_cmd) => match arth_cmd {
@@ -145,18 +171,15 @@ impl CodeWriter {
                 ArithmeticCommand::Sub => vec![POP, LOOK_BACK, "M=M-D"].join("\n"),
                 ArithmeticCommand::Neg => vec![LOOK_BACK, "M=-M"].join("\n"),
                 ArithmeticCommand::Eq => {
-                    self.unique_counter += 1;
-                    let lbl = format!("EQ{}", self.unique_counter);
+                    let lbl = self.get_unique_lbl("EQ");
                     comparison("JEQ", &lbl[..])
                 }
                 ArithmeticCommand::Gt => {
-                    self.unique_counter += 1;
-                    let lbl = format!("GT{}", self.unique_counter);
+                    let lbl = self.get_unique_lbl("GT");
                     comparison("JGT", &lbl[..])
                 }
                 ArithmeticCommand::Lt => {
-                    self.unique_counter += 1;
-                    let lbl = format!("LT{}", self.unique_counter);
+                    let lbl = self.get_unique_lbl("LT");
                     comparison("JLT", &lbl[..])
                 }
                 ArithmeticCommand::And => vec![POP, LOOK_BACK, "M=M&D"].join("\n"),
@@ -188,19 +211,117 @@ impl CodeWriter {
                 MemorySegment::Static => memory_segment_static_pop(&self.curr_filename[..], index),
             },
             VMCommand::LabelCommand(label) => {
-                format!("({})", self.get_label(label))
+                format!("({})", self.get_fn_scoped_lbl(label))
             }
             VMCommand::GotoCommand(label) => {
-                vec![format!("@{}", self.get_label(label)), "0;JMP".into()].join("\n")
+                vec![format!("@{}", self.get_fn_scoped_lbl(label)), "0;JMP".into()].join("\n")
             }
             VMCommand::IfGotoCommand(label) => {
-                vec![POP.into(), format!("@{}", self.get_label(label)), "D;JNE".into()].join("\n")
+                vec![POP.into(), format!("@{}", self.get_fn_scoped_lbl(label)), "D;JNE".into()].join("\n")
+            },
+            VMCommand::FunctionCommand(func_name, num_args) => {
+                self.curr_function = Some(func_name[..].into());
+                let mut instrs = vec![format!("({})", func_name)];
+                for _ in 0..*num_args {
+                    instrs.push("D=0".into());
+                    instrs.push(PUSH_D.into());
+                }
+                instrs.join("\n")
             }
-            _ => String::from("todo"),
+            VMCommand::CallCommand(func_name, num_args) => {
+                let return_lbl = self.get_unique_lbl("RT");
+                let args_offset = num_args + 5;
+                vec![
+                    format!("@{}", return_lbl),
+                    "D=A".into(),
+                    PUSH_D.into(),
+                    push_lbl("LCL"),
+                    push_lbl("ARG"),
+                    push_lbl("THIS"),
+                    push_lbl("THAT"),
+                    "@SP".into(),
+                    "D=M".into(),
+                    format!("@{}", args_offset),
+                    "D=D-A".into(),
+                    "@ARG".into(),
+                    "M=D".into(),
+                    "@SP".into(),
+                    "D=M".into(),
+                    "@LCL".into(),
+                    "M=D".into(), 
+                    format!("@{}", func_name),
+                    "0;JMP".into(),
+                    format!("({})", return_lbl),
+                ].join("\n")
+            },
+            VMCommand::ReturnCommand => {
+                vec![
+                    // store return address in R14, it might be overwritten in the next step
+                    "@LCL",
+                    "D=M",
+                    "@5",
+                    "A=D-A",
+                    "D=M",
+                    "@R14",
+                    "M=D",
+
+                    // set return value
+                    POP,
+                    "@ARG",
+                    "A=M",
+                    "M=D",
+
+                    // set SP to correct location
+                    "@ARG",
+                    "D=M+1",
+                    "@SP",
+                    "M=D",
+
+                    // R13 = LCL
+                    "@LCL",
+                    "D=M",
+                    "@R13",
+                    "M=D",
+
+                    // Decrement R13 and 
+                    "AM=M-1",
+                    "D=M",
+                    "@THAT",
+                    "M=D",
+
+                    "@R13",
+                    "AM=M-1",
+                    "D=M",
+                    "@THIS",
+                    "M=D",
+
+                    "@R13",
+                    "AM=M-1",
+                    "D=M",
+                    "@ARG",
+                    "M=D",
+
+                    "@R13",
+                    "AM=M-1",
+                    "D=M",
+                    "@LCL",
+                    "M=D",
+
+
+                    "@R14",
+                    "A=M",
+                    "0;JMP",
+                ].join("\n")
+            }
         }
     }
 
-    fn get_label(&self, label: &str) -> String {
+    fn get_fn_scoped_lbl(&self, label: &str) -> String {
         format!("{}${}", self.curr_function.as_deref().unwrap_or(""), label)
+    }
+
+    fn get_unique_lbl(&mut self, prefix: &str) -> String {
+        self.unique_counter += 1;
+        format!("{}{}", prefix, self.unique_counter)
     }
 }

@@ -60,6 +60,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let files = get_files(args.get(1).map(|s| &s[..]))?;
     let mut writer = writer::CodeWriter::new();
+    println!("{}", writer.write_init_code());
     for file in files {
         let commands = parser::parse_file_contents(&file.content[..])?;
         // println!("{:#?}", commands);
